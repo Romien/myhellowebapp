@@ -1,7 +1,12 @@
+from django.contrib.auth.decorators import login_required
+from django.http import Http404
+
 from django.shortcuts import render, redirect
+from django.template.defaultfilters import slugify
 
 from collection.forms import ThingForm
 from collection.models import Thing
+
 
 # Create your views here.
 
@@ -11,7 +16,6 @@ def index(request):
     return render(request, 'index.html', {
         "things": things,
     })
-# our new view:
 
 
 def thing_detail(request, king):
@@ -24,9 +28,15 @@ def thing_detail(request, king):
     })
 
 
+@login_required
 def edit_thing(request, king):
     # grab the object...
     thing = Thing.objects.get(slug=king)
+
+    # grab the current logged in user and make sure they're the owner of the thing
+    if thing.user != request.user:
+        raise Http404
+
     # set the form we're using
     form_class = ThingForm
 
@@ -34,6 +44,7 @@ def edit_thing(request, king):
     if request.method == 'POST':
         # grab the data from the submitted form and apply to the form
         form = form_class(data=request.POST, instance=thing)
+
         if form.is_valid():
             # save the new data
             form.save()
@@ -46,4 +57,49 @@ def edit_thing(request, king):
     return render(request, 'things/edit_thing.html', {
         'thing': thing,
         'form': form,
+    })
+
+
+# add below your edit_thing view
+def create_thing(request):
+    form_class = ThingForm
+
+    # if we're coming from a submitted form, do this
+    if request.method == 'POST':
+        # grab the data from the submitted form and
+        # apply to the form
+        form = form_class(request.POST)
+        if form.is_valid():
+            # create an instance but don't save yet
+            thing = form.save(commit=False)
+
+            # set the additional details
+            thing.user = request.user
+            thing.slug = slugify(thing.name)
+
+            # save the object
+            thing.save()
+
+            # redirect to our newly created thing
+            return redirect('thing_detail', king=thing.slug)
+
+    # otherwise just create the form
+    else:
+        form = form_class()
+
+    return render(request, 'things/create_thing.html', {
+        'form': form,
+    })
+
+
+def browse_by_name(request, initial=None):
+    if initial:
+        things = Thing.objects.filter(name__istartswith=initial)
+        things = things.order_by('name')
+    else:
+        things = Thing.objects.all().order_by('name')
+
+    return render(request, 'search/search.html', {
+        'things': things,
+        'initial': initial,
     })
